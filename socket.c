@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include<unistd.h>
 
 /* Socket API headers */
 #include <sys/socket.h>
@@ -11,7 +12,7 @@
 
 /* Definitions */
 #define DEFAULT_BUFLEN 512
-#define PORT XXXX
+#define PORT 6673
 
 int main()
 {
