@@ -19,11 +19,18 @@
 #define DEFAULT_BUFLEN 512
 #define PORT 6673
 #define MAX_USERS 2
+#define MAX_FILES 3
 
 /* User and Password information */
 struct UserInfo {
     char username[50];
     char password[50];
+};
+
+/* File information */
+struct FileInfo {
+    char filename[50];
+    int size;
 };
 
 /* Function to perform user authentication */
@@ -40,6 +47,22 @@ int authenticateUser(char* receivedData, struct UserInfo users[MAX_USERS]) {
     return 400;  // User not found
 }
 
+/* Function to handle LIST command */
+void handleListCommand(int clientSocket, struct FileInfo files[MAX_FILES]) {
+    char listResponse[DEFAULT_BUFLEN];
+    strcpy(listResponse, "Files:\n");
+
+    for (int i = 0; i < MAX_FILES; ++i) {
+        char fileInfo[50];
+        sprintf(fileInfo, "file%d %d\n", i + 1, files[i].size);
+        strcat(listResponse, fileInfo);
+    }
+
+    strcat(listResponse, ".\n");
+
+    send(clientSocket, listResponse, strlen(listResponse), 0);
+}
+
 int main() {
     int server, client;
     struct sockaddr_in local_addr;
@@ -49,7 +72,10 @@ int main() {
     int recvbuflen = DEFAULT_BUFLEN;
 
     /* User information */
-    struct UserInfo users[MAX_USERS] = { {"alice", "qwerty"}, {"bob", "2021.sockets"} };
+    struct UserInfo users[MAX_USERS] = {{"alice", "qwerty"}, {"bob", "2021.sockets"}};
+
+    /* File information */
+    struct FileInfo files[MAX_FILES] = {{"file1", 100}, {"file2", 150}, {"file3", 200}};
 
     /* Open socket descriptor */
     if ((server = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
@@ -87,7 +113,7 @@ int main() {
     while (1) { // main accept() loop
         length = sizeof remote_addr;
         if ((fd = accept(server, (struct sockaddr*)&remote_addr, \
-            &length)) == -1) {
+                         &length)) == -1) {
             perror("Accept Problem!");
             continue;
         }
@@ -108,7 +134,12 @@ int main() {
 
                 // Respond based on authentication result
                 if (authResult == 200) {
-                    sprintf(bmsg, "200 User %s granted to access.\n", users[0].username);
+                    // Check for LIST command
+                    if (strncmp(recvbuf, "LIST", 4) == 0) {
+                        handleListCommand(fd, files);
+                    } else {
+                        sprintf(bmsg, "200 User %s granted to access.\n", users[0].username);
+                    }
                 } else {
                     sprintf(bmsg, "400 User not found. Please try with another user.\n");
                 }
