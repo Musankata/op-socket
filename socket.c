@@ -9,31 +9,26 @@
 #include <string.h>
 #include <sys/types.h>
 #include <unistd.h>
-
-/* Socket API headers */
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
-/* Definitions */
 #define DEFAULT_BUFLEN 512
 #define PORT 6673
 #define MAX_USERS 2
 #define MAX_FILES 3
 
-/* User and Password information */
 struct UserInfo {
     char username[50];
     char password[50];
 };
 
-/* File information */
 struct FileInfo {
     char filename[50];
     int size;
 };
 
-/* Function to perform user authentication */
+// Function to perform user authentication
 int authenticateUser(char* receivedData, struct UserInfo users[MAX_USERS]) {
     char username[50], password[50];
     sscanf(receivedData, "USER %s %s", username, password);
@@ -47,7 +42,7 @@ int authenticateUser(char* receivedData, struct UserInfo users[MAX_USERS]) {
     return 400;  // User not found
 }
 
-/* Function to handle LIST command */
+// Function to handle LIST command
 void handleListCommand(int clientSocket, struct FileInfo files[MAX_FILES]) {
     char listResponse[DEFAULT_BUFLEN];
     strcpy(listResponse, "Files:\n");
@@ -63,9 +58,8 @@ void handleListCommand(int clientSocket, struct FileInfo files[MAX_FILES]) {
     send(clientSocket, listResponse, strlen(listResponse), 0);
 }
 
-/* Function to handle GET command */
+// Function to handle GET command
 void handleGetCommand(int clientSocket, struct FileInfo files[MAX_FILES], char* filename) {
-    // Find the file index
     int fileIndex = -1;
     for (int i = 0; i < MAX_FILES; ++i) {
         if (strcmp(files[i].filename, filename) == 0) {
@@ -74,13 +68,10 @@ void handleGetCommand(int clientSocket, struct FileInfo files[MAX_FILES], char* 
         }
     }
 
-    // Prepare response
-    char getResponse[DEFAULT_BUFLEN];
-
     if (fileIndex != -1) {
-        // File found, send content to the client
         FILE* file = fopen(files[fileIndex].filename, "r");
         if (file != NULL) {
+            char getResponse[DEFAULT_BUFLEN];
             sprintf(getResponse, "GET %s\n", filename);
             send(clientSocket, getResponse, strlen(getResponse), 0);
 
@@ -89,18 +80,47 @@ void handleGetCommand(int clientSocket, struct FileInfo files[MAX_FILES], char* 
                 send(clientSocket, fileContent, strlen(fileContent), 0);
             }
 
-            // Terminate with "\r\n.\r\n"
             send(clientSocket, "\r\n.\r\n", 5, 0);
 
             fclose(file);
         } else {
-            // Unable to open the file
             send(clientSocket, "500 Internal Server Error\n", 26, 0);
         }
     } else {
-        // File not found
         send(clientSocket, "404 File not found\n", 19, 0);
     }
+}
+
+// Function to handle PUT command
+void handlePutCommand(int clientSocket, struct FileInfo files[MAX_FILES], char* filename) {
+    char putResponse[DEFAULT_BUFLEN];
+
+    FILE* file = fopen(filename, "w");
+    if (file != NULL) {
+        char fileContent[DEFAULT_BUFLEN];
+        int totalBytesReceived = 0;
+
+        // Receive file content until termination signal is received
+        while (recv(clientSocket, fileContent, sizeof(fileContent), 0) > 0) {
+            if (strcmp(fileContent, "\r\n.\r\n") == 0) {
+                break;
+            }
+
+            // Write received content to file
+            fprintf(file, "%s", fileContent);
+            totalBytesReceived += strlen(fileContent);
+        }
+
+        fclose(file);
+
+        // Send response based on file writing status
+        sprintf(putResponse, "200 %d Byte %s retrieved by server and was saved.\n", totalBytesReceived, filename);
+    } else {
+        // Unable to open the file for writing
+        sprintf(putResponse, "400 File cannot be saved on server side.\n");
+    }
+
+    send(clientSocket, putResponse, strlen(putResponse), 0);
 }
 
 int main() {
@@ -152,49 +172,40 @@ int main() {
 
     while (1) { // main accept() loop
         length = sizeof remote_addr;
-        if ((fd = accept(server, (struct sockaddr*)&remote_addr, \
-                         &length)) == -1) {
+        if ((fd = accept(server, (struct sockaddr*)&remote_addr, &length)) == -1) {
             perror("Accept Problem!");
             continue;
         }
 
-        printf("Server: got connection from %s\n", \
-            inet_ntoa(remote_addr.sin_addr));
+        printf("Server: got connection from %s\n", inet_ntoa(remote_addr.sin_addr));
 
         // Receive until the peer shuts down the connection
         do {
-            // Clear Receive buffer
             memset(&recvbuf, '\0', sizeof(recvbuf));
             rcnt = recv(fd, recvbuf, recvbuflen, 0);
             if (rcnt > 0) {
                 printf("Bytes received: %d\n", rcnt);
 
-                // Authenticate user
                 int authResult = authenticateUser(recvbuf, users);
 
-                // Respond based on authentication result
                 if (authResult == 200) {
-                    // Check for LIST command
                     if (strncmp(recvbuf, "LIST", 4) == 0) {
-                        // Handle LIST command
                         handleListCommand(fd, files);
                     } else if (strncmp(recvbuf, "GET", 3) == 0) {
-                        // Extract filename from the GET command
                         char filename[50];
                         sscanf(recvbuf, "GET %s", filename);
-
-                        // Handle GET command
                         handleGetCommand(fd, files, filename);
+                    } else if (strncmp(recvbuf, "PUT", 3) == 0) {
+                        char filename[50];
+                        sscanf(recvbuf, "PUT %s", filename);
+                        handlePutCommand(fd, files, filename);
                     } else {
-                        // Respond with a general success message
                         sprintf(bmsg, "200 User %s granted access.\n", users[0].username);
                     }
                 } else {
-                    // Respond with a user not found message
                     sprintf(bmsg, "400 User not found. Please try with another user.\n");
                 }
 
-                // Echo the response back to the sender
                 rcnt = send(fd, bmsg, strlen(bmsg), 0);
                 if (rcnt < 0) {
                     perror("Send failed:");
