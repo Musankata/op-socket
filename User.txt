@@ -1,5 +1,5 @@
-Luc
-Lukas
-Lucas
-Musa 
-Nkulu
+Luc: 2020
+Lukas:2021
+Lucas: 2022
+Musa :2023
+Nkulu: 2024
